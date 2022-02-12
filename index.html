@@ -1,0 +1,138 @@
+<div>
+<table>
+<tr>
+	<td colspan=5><input id=querytext type=text placeholder='text'></td></tr>
+<tr>
+	<td><a href=javascript:setfont('隶')>隶</a>
+	<td><a href=javascript:setfont('楷')>楷</a>
+	<td><a href=javascript:setfont('行')>行</a>
+	<td><a href=javascript:setfont('草')>草</a>
+	<td><a href=javascript:setfont('篆')>篆</a>
+<tr>
+	<td colspan=5 id=querytd>
+</table>
+</div>
+<div id=output></div>
+
+<style>
+.characters { display: flex; flex-wrap: wrap }
+.character img { height: 5em }
+.character { margin: 0.2em }
+
+.character figcaption { font-size: 0.8em }
+
+.controls a { visibility: hidden }
+.controls:hover a { visibility: visible }
+.controls a { margin-left: 1em }
+</style>
+
+<script src='crypto-js.min.js'></script>
+
+<script>
+const my_fetch = url => fetch('https://www.cs.virginia.edu/~jh7qbe/test.php?url=' + encodeURIComponent(url))
+
+const keyenc = CryptoJS.enc.Utf8.parse('PkT!ihpN^QkQ62k%')
+
+const yg_encode = json => {
+	e = data = JSON.stringify(json);
+	const dataenc = CryptoJS.enc.Utf8.parse(data)
+	const c = CryptoJS.AES.encrypt(dataenc, keyenc, {
+		mode: CryptoJS.mode.ECB,
+		iv: keyenc,
+		padding: CryptoJS.pad.Pkcs7
+	})
+	const o = c.ciphertext.toString(CryptoJS.enc.Base64);
+	return o.replace(/\+|\/|=/g, (c => "+" === c ? "-" : "/" === c ? "_" : "=" === c ? "!" : void 0))
+}
+
+const yg_decode = data => {
+	const a = CryptoJS.AES.decrypt(data, keyenc, {
+		mode: CryptoJS.mode.ECB,
+		iv: keyenc,
+		padding: CryptoJS.pad.Pkcs7
+	})
+	const c = a.toString(CryptoJS.enc.Utf8);
+	return JSON.parse(c)
+}
+
+const yg_query = async json => {
+	const p = yg_encode(json)
+	const res = await my_fetch(`https://api.ygsf.com/v2.4/glyph/query?p=${p}`).then(r => r.text())
+	return yg_decode(res)
+}
+
+/*****************/
+
+let settings = { font: '楷' }
+settings.toString = _ => `${settings.font}`
+
+const setfont = font => {
+	settings.font = font
+	querytd.innerHTML = `[<a href="javascript:search()">search using ${settings}</a>]`
+}
+
+const normalise = text => text.match(/\p{Script=Hani}+/gu).join('')
+
+const dispimage = ({ _author, _clear_image }) => `<figure class=character>
+		<img src='${_clear_image}'>
+		<figcaption>${_author}</figcaption>
+	</figure>`
+
+const search = async _ => {
+	const max = +(querytext.value.match(/max=(\d+)/)??[null, '12'])[1]
+	const nowrap = !!querytext.value.match(/nowrap=\w+/)
+
+	const text = normalise(querytext.value)
+	const chars = [...new Set(text)]
+
+	output.innerHTML = `searching with normalised ${text}...`
+	querytd.innerHTML = ''
+	const lookup = Object.fromEntries(
+		await Promise.all(chars.map(key =>
+			yg_query({ key, ...settings })
+				.then(({ data: { list } }) => [key, list])
+			)
+		)
+	)
+
+	// really ugly .appends bc have to make function referencing anonymous? elements
+	for (const c of text) {
+		const characters = document.createElement('div')
+		characters.innerHTML = lookup[c].slice(0, max).map(dispimage).join('')
+		characters.className = 'characters'
+
+		characters.style.flexWrap = nowrap ? 'nowrap' : 'wrap'
+
+		const controls = document.createElement('div')
+		controls.innerHTML = `<span>${c}</span>`
+		controls.className = 'controls'
+
+		const wraptoggle = document.createElement('a')
+		wraptoggle.innerText = 'un/wrap'
+		wraptoggle.href = 'javascript:void(0)'
+		wraptoggle.onclick = _ => {
+			const wrapped = characters.style.flexWrap === 'wrap'
+			console.log(wrapped, characters.style.flexWrap)
+			characters.style.flexWrap = wrapped ? 'nowrap' : 'wrap'
+			characters.style.overflowX = wrapped ? 'scroll' : 'hidden'
+		}
+		controls.append(wraptoggle)
+
+		const more = document.createElement('a')
+		more.innerHTML = `load more`
+		more.href = wraptoggle.href = 'javascript:void(0)'
+		more.onclick = _ => characters.innerHTML = lookup[c].map(dispimage).join('')
+		controls.append(more)
+
+		output.append(controls)
+		output.append(characters)
+	}
+}
+
+const go = new URLSearchParams(window.location.search).get('go')
+if (go) {
+	querytext.value = go
+	search()
+}
+
+</script>
