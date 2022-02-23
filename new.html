@@ -1,0 +1,169 @@
+<title>character multisearch</title>
+
+<div id=input>
+	<textarea id=querytext type=text placeholder='characters n stuff {optional options 隶|楷|行|草|篆, nowrap, max=123}'></textarea>
+	<span id=querybutton>[<a href=javascript:runsearch()>run search</a>]</span>
+</div>
+
+<div id=output></div>
+
+<style>
+#input { margin: 1em; display: flex }
+#input > span { writing-mode: vertical-rl }
+#querytext { width: 20em }
+
+.characters { display: flex; flex-wrap: wrap }
+.character img { height: 5em }
+.character { margin: 0.2em }
+
+.character figcaption { font-size: 0.8em }
+
+.controls a { visibility: hidden }
+.controls:hover a { visibility: visible }
+.controls
+	{ writing-mode: vertical-rl
+	; display: flex
+	; flex-direction: column-reverse
+	; gap: 0.2em
+	}
+
+.char
+	{ display: flex
+	; margin: 0.5em
+	; padding: 0.2em
+	; border-left: 1px solid
+	}
+</style>
+
+<script src='crypto-js.min.js'></script>
+
+<script>
+const my_fetch = url => fetch('https://www.cs.virginia.edu/~jh7qbe/test.php?url=' + encodeURIComponent(url))
+
+const keyenc = CryptoJS.enc.Utf8.parse('PkT!ihpN^QkQ62k%')
+
+const yg_encode = json => {
+	e = data = JSON.stringify(json);
+	const dataenc = CryptoJS.enc.Utf8.parse(data)
+	const c = CryptoJS.AES.encrypt(dataenc, keyenc, {
+		mode: CryptoJS.mode.ECB,
+		iv: keyenc,
+		padding: CryptoJS.pad.Pkcs7
+	})
+	const o = c.ciphertext.toString(CryptoJS.enc.Base64);
+	return o.replace(/\+|\/|=/g, (c => "+" === c ? "-" : "/" === c ? "_" : "=" === c ? "!" : void 0))
+}
+
+const yg_decode = data => {
+	const a = CryptoJS.AES.decrypt(data, keyenc, {
+		mode: CryptoJS.mode.ECB,
+		iv: keyenc,
+		padding: CryptoJS.pad.Pkcs7
+	})
+	const c = a.toString(CryptoJS.enc.Utf8);
+	return JSON.parse(c)
+}
+
+const yg_query = async json => {
+	const p = yg_encode(json)
+	const res = await my_fetch(`https://api.ygsf.com/v2.4/glyph/query?p=${p}`).then(r => r.text())
+	return yg_decode(res)
+}
+
+/*****************/
+
+const normalise = text => text.match(/\p{Script=Hani}+/gu).join('')
+
+const parseoptions = opts =>
+	({ max:    +(opts.match(/max=(\d+)/)?.[1] || '12')
+	 , nowrap: !!opts.match(/nowrap/)
+	 , style:  opts.match(/隶|楷|行|草|篆/)?.[0] || '楷'
+	})
+
+const parse = text => [...text.matchAll(/([^\{\}]+)(?:\{(.+?)\})?/g)]
+		.map(([_, txt, options]) => [normalise(txt), parseoptions(options ?? '')])
+
+const dispimage = ({ _author, _clear_image }) => `<figure class=character>
+		<img src='${_clear_image}'>
+		<figcaption>${_author}</figcaption>
+	</figure>`
+
+const display_characters = (char, { style, nowrap, max }) => parent => ygsf => {
+
+	parent.innerHTML = ''
+
+	const characters = document.createElement('div')
+	characters.innerHTML = ygsf.slice(0, max).map(dispimage).join('')
+	characters.className = 'characters'
+
+	characters.style.flexWrap = nowrap ? 'nowrap' : 'wrap'
+
+	const controls = document.createElement('div')
+	controls.innerHTML = `<span>${char}（${style}）</span>`
+	controls.className = 'controls'
+
+	const wraptoggle = document.createElement('a')
+	wraptoggle.innerText = 'un/wrap'
+	wraptoggle.href = 'javascript:void(0)'
+	wraptoggle.onclick = _ => {
+		const wrapped = characters.style.flexWrap === 'wrap'
+		console.log(wrapped, characters.style.flexWrap)
+		characters.style.flexWrap = wrapped ? 'nowrap' : 'wrap'
+		characters.style.overflowX = wrapped ? 'scroll' : 'hidden'
+	}
+	controls.append(wraptoggle)
+
+	const more = document.createElement('a')
+	more.innerHTML = `load more`
+	more.href = wraptoggle.href = 'javascript:void(0)'
+	more.onclick = _ => characters.innerHTML = ygsf.map(dispimage).join('')
+	controls.append(more)
+
+	parent.append(controls)
+	parent.append(characters)
+}
+
+const search = queries => {
+
+	// accumulates a { style: { character: [Promise ygsf json] } }
+	const chars = {}
+	for (const [text, { style }] of queries) {
+		if (!chars[style]) chars[style] = {}
+		for (const char of text) {
+			if (chars[style][char]) continue;
+			chars[style][char] = yg_query({ key: char, font: style })
+				.then(({ data: { list } }) => list)
+		}
+	}
+
+	console.log(chars)
+
+	// could probably just do one pass but oh well
+	// probably easier to add more than 120 max in future
+	for (const [text, opts] of queries) {
+		for (const char of text) {
+			const parent = document.createElement('div')
+			parent.className = 'char'
+			output.append(parent)
+			// would ideally show a placeholder "this character is loading"
+			parent.innerText = `loading ${char} (${opts.style})...`
+			chars[opts.style][char].then(display_characters(char, opts)(parent))
+		}
+	}
+}
+
+const runsearch = _ => {
+	search(parse(querytext.value))
+	querybutton.innerHTML = '' /* TODO: better thing.
+	  it _will_ crash if parsing which will prevent button removed but
+	  ummmmmmmmmm idk maybe give user to preview what will be searched? */
+}
+
+const go = new URLSearchParams(window.location.search).get('go')
+if (go) {
+	querytext.value = go
+	search(parse(go))
+	querybutton.innerHTML = ''
+}
+
+</script>
