@@ -99,7 +99,7 @@ const display_characters = (char, { style, nowrap, max }) => parent => ygsf => {
 	characters.style.flexWrap = nowrap ? 'nowrap' : 'wrap'
 
 	const controls = document.createElement('div')
-	controls.innerHTML = `<span>${char}（${style}）</span>`
+	controls.innerHTML = `<span><b>${char}</b>（${style}）</span>`
 	controls.className = 'controls'
 
 	const wraptoggle = document.createElement('a')
@@ -123,10 +123,13 @@ const display_characters = (char, { style, nowrap, max }) => parent => ygsf => {
 	parent.append(characters)
 }
 
-const search = queries => {
+// accumulates a { style: { character: [Promise ygsf json] } }
+// global to keep results across searches
+// will need to edit if add more than 120 max in future
+const chars = {}
 
-	// accumulates a { style: { character: [Promise ygsf json] } }
-	const chars = {}
+const search = queries => {
+	// add characters not seen before
 	for (const [text, { style }] of queries) {
 		if (!chars[style]) chars[style] = {}
 		for (const char of text) {
@@ -153,17 +156,15 @@ const search = queries => {
 }
 
 const runsearch = _ => {
-	search(parse(querytext.value))
-	querybutton.innerHTML = '' /* TODO: better thing.
-	  it _will_ crash if parsing which will prevent button removed but
-	  ummmmmmmmmm idk maybe give user to preview what will be searched? */
+	output.innerHTML = ''
+	search(parse(querytext.value)) /* TODO: better feedback if something failed to parse,
+	                                  what is about to be searched? */
 }
 
 const go = new URLSearchParams(window.location.search).get('go')
 if (go) {
 	querytext.value = go
 	search(parse(go))
-	querybutton.innerHTML = ''
 }
 
 </script>
