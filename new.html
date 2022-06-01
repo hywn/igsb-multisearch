@@ -61,7 +61,11 @@ const yg_decode = data => {
 		padding: CryptoJS.pad.Pkcs7
 	})
 	const c = a.toString(CryptoJS.enc.Utf8);
-	return JSON.parse(c)
+	try {
+		return JSON.parse(c)
+	} catch {
+		console.log(c)
+	}
 }
 
 const yg_query = async json => {
@@ -74,14 +78,21 @@ const yg_query = async json => {
 
 const normalise = text => text.match(/\p{Script=Hani}+/gu).join('')
 
-const parseoptions = opts =>
-	({ max:    +(opts.match(/max=(\d+)/)?.[1] || '12')
-	 , nowrap: !!opts.match(/nowrap/)
-	 , style:  opts.match(/隶|楷|行|草|篆/)?.[0] || '楷'
-	})
+const mapp = { 예: '隶', 해: '楷', 행: '行', 초: '草', 전: '篆'
+             , 隶: '隶', 楷: '楷', 行: '行', 草: '草', 篆: '篆' }
 
-const parse = text => [...text.matchAll(/([^\{\}]+)(?:\{(.+?)\})?/g)]
-		.map(([_, txt, options]) => [normalise(txt), parseoptions(options ?? '')])
+const parseoptions = opts => (opts.match(/隶|楷|行|草|篆|예|해|행|초|전/g) ?? ['楷'])
+	.map(x => mapp[x])
+	.map(style =>
+		({ max:    +(opts.match(/max=(\d+)/)?.[1] || '12')
+		 , nowrap: !!opts.match(/nowrap/)
+		 , style
+		})
+	)
+
+const parse = text => [...text.matchAll(/([^\{\}]+)(?:\{(.+?)\})?/sg)]
+	.map(([_, txt, options]) => parseoptions(options ?? '').map(opt => [normalise(txt), opt]))
+	.flat()
 
 const dispimage = ({ _author, _clear_image }) => `<figure class=character>
 		<img src='${_clear_image}'>
